@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="id" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel Admin Koperasi</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-full">
+
+    <!-- Konten Akan Muncul Setelah Login -->
+    <div id="admin-app" class="hidden">
+        <header class="gradient-bg text-white shadow-md">
+            <div class="max-w-4xl mx-auto px-4 py-4 flex justify-between items-center">
+                <h1 class="text-2xl font-bold">Panel Admin Koperasi K1KATA</h1>
+                <button id="admin-logout-button" class="bg-white/20 hover:bg-white/30 text-white font-medium py-2 px-3 rounded-lg text-sm">
+                    Logout
+                </button>
+            </div>
+        </header>
+
+        <main class="max-w-4xl mx-auto p-4 md:p-6">
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-semibold mb-4 border-b pb-2">Input Setoran Anggota</h2>
+                <form id="deposit-form" class="space-y-4">
+                    <div>
+                        <label for="member-search" class="block text-sm font-medium text-gray-700">Cari Anggota (Nama atau No. Anggota)</label>
+                        <input type="text" id="member-search" class="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1" placeholder="Ketik nama...">
+                        <div id="search-results" class="border border-gray-300 rounded-lg mt-1 max-h-48 overflow-y-auto">
+                            <!-- Hasil pencarian akan muncul di sini -->
+                        </div>
+                        <input type="hidden" id="selected-user-id">
+                        <div id="selected-user-display" class="hidden mt-2 p-3 bg-blue-50 rounded-lg">
+                            <p class="text-sm">Anggota dipilih:</p>
+                            <p id="selected-user-name" class="font-semibold text-blue-800"></p>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="jenis-setoran" class="block text-sm font-medium text-gray-700">Jenis Setoran</label>
+                        <select id="jenis-setoran" class="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1 bg-white">
+                            <option value="simpananWajib">Simpanan Wajib</option>
+                            <option value="simpananSukarela">Simpanan Sukarela</option>
+                            <option value="simpananPokok">Simpanan Pokok</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="jumlah-setoran" class="block text-sm font-medium text-gray-700">Jumlah (Rp)</label>
+                        <input type="number" id="jumlah-setoran" class="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1" placeholder="Contoh: 50000" required>
+                    </div>
+                    
+                    <div>
+                        <label for="keterangan" class="block text-sm font-medium text-gray-700">Keterangan (Opsional)</label>
+                        <input type="text" id="keterangan" class="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1" placeholder="Misal: Pembayaran bulan Juni">
+                    </div>
+
+                    <div class="text-right">
+                        <button type="submit" id="submit-deposit" class="gradient-bg text-white px-6 py-2 rounded-lg hover:opacity-90 font-semibold flex items-center justify-center min-w-[150px]">
+                            <span id="submit-text">Submit Setoran</span>
+                            <div id="submit-loader" class="loader hidden"></div>
+                        </button>
+                    </div>
+                    <p id="submit-status" class="text-sm text-center"></p>
+                </form>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Layar Login Admin -->
+    <div id="admin-login-screen" class="min-h-full h-screen flex justify-center items-center gradient-bg p-6">
+        <div class="max-w-sm w-full bg-white rounded-lg shadow-xl p-8">
+            <div class="text-center mb-6">
+                <h1 class="text-2xl font-bold mb-2 text-gray-800">Login Admin</h1>
+                <p class="text-gray-600">Khusus Pengurus Koperasi</p>
+            </div>
+            <form id="admin-login-form">
+                <div class="mb-4">
+                    <label for="admin-email" class="block text-sm font-medium text-gray-700 mb-1">Email Admin</label>
+                    <input type="email" id="admin-email" class="w-full px-3 py-2 border border-gray-300 rounded-lg" required>
+                </div>
+                <div class="mb-6">
+                    <label for="admin-password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                    <input type="password" id="admin-password" class="w-full px-3 py-2 border border-gray-300 rounded-lg" required>
+                </div>
+                <button type="submit" id="admin-login-button" class="w-full gradient-bg text-white px-4 py-3 rounded-lg hover:opacity-90 font-semibold">
+                    Login
+                </button>
+                <p id="admin-login-error" class="text-sm text-center text-red-500 mt-4"></p>
+            </form>
+        </div>
+    </div>
+
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            onAuthStateChanged, 
+            signInWithEmailAndPassword, 
+            signOut,
+            signInWithCustomToken
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            collection, 
+            getDocs,
+            doc,
+            updateDoc,
+            addDoc,
+            increment,
+            Timestamp,
+            setLogLevel,
+            query,
+            where,
+            limit,
+            or
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- KONFIGURASI FIREBASE (SUDAH DIUPDATE) ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyB5oAiObdlEnDyWJzrdIqfeitv4GzOZ72U",
+            authDomain: "koperasi-k1kata.firebaseapp.com",
+            projectId: "koperasi-k1kata",
+            storageBucket: "koperasi-k1kata.firebasestorage.app",
+            messagingSenderId: "426088050905",
+            appId: "1:426088050905:web:efd48f8ab64dd80ed08ec8",
+            measurementId: "G-0H2HVTBB8E"
+        };
+        // ------------------------------------------
+
+        let app, auth, db;
+        let adminUser = null;
+
+        // Elemen UI
+        const adminApp = document.getElementById('admin-app');
+        const adminLoginScreen = document.getElementById('admin-login-screen');
+        const adminLoginForm = document.getElementById('admin-login-form');
+        const adminLoginButton = document.getElementById('admin-login-button');
+        const adminLoginError = document.getElementById('admin-login-error');
+        const adminLogoutButton = document.getElementById('admin-logout-button');
+        
+        const searchInput = document.getElementById('member-search');
+        const searchResults = document.getElementById('search-results');
+        const selectedUserId = document.getElementById('selected-user-id');
+        const selectedUserDisplay = document.getElementById('selected-user-display');
+        const selectedUserName = document.getElementById('selected-user-name');
+        
+        const depositForm = document.getElementById('deposit-form');
+        const submitButton = document.getElementById('submit-deposit');
+        const submitText = document.getElementById('submit-text');
+        const submitLoader = document.getElementById('submit-loader');
+        const submitStatus = document.getElementById('submit-status');
+
+        // Inisialisasi Firebase
+        async function initializeFirebase() {
+             try {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                setLogLevel('Debug');
+                
+                // --- PERBAIKAN ---
+                // Menghapus panggilan signInWithCustomToken karena
+                // config Firebase ini milik Anda, bukan dari environment.
+                // if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                //     await signInWithCustomToken(auth, __initial_auth_token);
+                // }
+
+                setupAuthListener();
+            } catch (error) {
+                console.error("Firebase Gagal diinisialisasi:", error);
+                adminLoginScreen.innerHTML = "Gagal memuat aplikasi.";
+            }
+        }
+
+        // Listener Login Admin
+        function setupAuthListener() {
+            onAuthStateChanged(auth, (user) => {
+                // Di sini kita TIDAK mengecek admin atau bukan,
+                // Aturan Keamanan Firestore yang akan menanganinya.
+                // Jika user BUKAN admin, dia bisa login tapi GAGAL submit.
+                if (user) {
+                    adminUser = user;
+                    adminApp.classList.remove('hidden');
+                    adminLoginScreen.classList.add('hidden');
+                } else {
+                    adminUser = null;
+                    adminApp.classList.add('hidden');
+                    adminLoginScreen.classList.remove('hidden');
+                }
+            });
+        }
+
+        // Handler Login
+        adminLoginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('admin-email').value;
+            const password = document.getElementById('admin-password').value;
+            
+            adminLoginButton.disabled = true;
+            adminLoginError.textContent = '';
+
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+                // onAuthStateChanged akan urus sisanya
+            } catch (error) {
+                console.error("Login Gagal:", error.code);
+                 if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
+                     adminLoginError.textContent = 'Email atau Password Admin salah.';
+                 } else {
+                     adminLoginError.textContent = 'Terjadi error saat login.';
+                 }
+            } finally {
+                adminLoginButton.disabled = false;
+            }
+        });
+
+        // Handler Logout
+        adminLogoutButton.addEventListener('click', async () => {
+            await signOut(auth);
+        });
+
+        // --- Fungsi Pencarian Anggota ---
+        let searchTimeout;
+        searchInput.addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(searchMembers, 300); // Tunda pencarian 300ms
+        });
+
+        async function searchMembers() {
+            const searchTerm = searchInput.value.trim();
+            if (searchTerm.length < 3) {
+                searchResults.innerHTML = '';
+                return;
+            }
+            
+            searchResults.innerHTML = '<p class="p-3 text-sm text-gray-500">Mencari...</p>';
+            
+            try {
+                const usersRef = collection(db, "users");
+                // Pencarian ini case-sensitive dan harus dari awal kata
+                const searchTermUpper = searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1);
+                
+                const q = query(usersRef, 
+                    where("nama", ">=", searchTermUpper),
+                    where("nama", "<=", searchTermUpper + '\uf8ff'),
+                    limit(10)
+                );
+                
+                const querySnapshot = await getDocs(q);
+                searchResults.innerHTML = '';
+                
+                if (querySnapshot.empty) {
+                     // Coba cari pakai noAnggota jika nama tidak ketemu
+                    const qNo = query(usersRef, where("noAnggota", "==", searchTerm), limit(1));
+                    const noSnapshot = await getDocs(qNo);
+                    if (noSnapshot.empty) {
+                        searchResults.innerHTML = '<p class="p-3 text-sm text-gray-500">Tidak ditemukan.</p>';
+                        return;
+                    }
+                    noSnapshot.forEach(doc => appendResult(doc));
+
+                } else {
+                    querySnapshot.forEach(doc => appendResult(doc));
+                }
+
+            } catch (error) {
+                console.error("Error searching: ", error);
+                searchResults.innerHTML = '<p class="p-3 text-sm text-red-500">Error saat mencari. Pastikan index sudah dibuat.</p>';
+            }
+        }
+        
+        function appendResult(doc) {
+            const user = doc.data();
+            const resultEl = document.createElement('div');
+            resultEl.className = 'p-3 hover:bg-gray-100 cursor-pointer border-b last:border-b-0';
+            resultEl.textContent = `${user.nama} (${user.noAnggota})`;
+            resultEl.onclick = () => selectUser(doc.id, user.nama);
+            searchResults.appendChild(resultEl);
+        }
+
+        function selectUser(userId, userName) {
+            selectedUserId.value = userId;
+            selectedUserName.textContent = userName;
+            selectedUserDisplay.classList.remove('hidden');
+            searchResults.innerHTML = '';
+            searchInput.value = userName;
+        }
+
+        // --- Handler Submit Setoran ---
+        depositForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const userId = selectedUserId.value;
+            const jenis = document.getElementById('jenis-setoran').value;
+            const jumlah = parseInt(document.getElementById('jumlah-setoran').value, 10);
+            const keterangan = document.getElementById('keterangan').value || `${document.getElementById('jenis-setoran').options[document.getElementById('jenis-setoran').selectedIndex].text}`;
+
+            if (!userId) {
+                showStatus('Harap pilih anggota terlebih dahulu.', true);
+                return;
+            }
+            if (!jumlah || jumlah <= 0) {
+                showStatus('Jumlah setoran tidak valid.', true);
+                return;
+            }
+
+            setLoading(true);
+
+            try {
+                // 1. Update saldo di dokumen 'users'
+                const userDocRef = doc(db, "users", userId);
+                await updateDoc(userDocRef, {
+                    [jenis]: increment(jumlah) // [jenis] akan menjadi 'simpananWajib', dll.
+                });
+
+                // 2. Catat di koleksi 'transactions' untuk riwayat
+                await addDoc(collection(db, "transactions"), {
+                    userId: userId,
+                    jenis: document.getElementById('jenis-setoran').options[document.getElementById('jenis-setoran').selectedIndex].text,
+                    jumlah: jumlah,
+                    keterangan: keterangan,
+                    timestamp: Timestamp.now(),
+                    adminId: adminUser.uid // Catat siapa admin yang input
+                });
+
+                showStatus('Setoran berhasil disimpan!', false);
+                depositForm.reset();
+                searchInput.value = '';
+                selectedUserDisplay.classList.add('hidden');
+                selectedUserId.value = '';
+
+            } catch (error) {
+                console.error("Error submitting deposit: ", error);
+                if(error.code === 'permission-denied') {
+                    showStatus('AKSI DITOLAK. Anda tidak memiliki hak admin untuk melakukan ini.', true);
+                } else {
+                    showStatus('Terjadi error. Gagal menyimpan.', true);
+                }
+            } finally {
+                setLoading(false);
+            }
+        });
+
+        function setLoading(isLoading) {
+            if (isLoading) {
+                submitButton.disabled = true;
+                submitText.classList.add('hidden');
+                submitLoader.classList.remove('hidden');
+            } else {
+                submitButton.disabled = false;
+                submitText.classList.remove('hidden');
+                submitLoader.classList.add('hidden');
+            }
+        }
+        
+        function showStatus(message, isError = false) {
+            submitStatus.textContent = message;
+            submitStatus.className = `text-sm text-center mt-2 ${isError ? 'text-red-500' : 'text-green-500'}`;
+            setTimeout(() => submitStatus.textContent = '', 4000);
+        }
+
+        // Inisialisasi
+        initializeFirebase();
+    </script>
+</body>
+</html>
+
