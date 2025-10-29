@@ -18,9 +18,10 @@
             background: linear-gradient(135deg, #1e40af 0%, #7c3aed 100%);
             color: white;
         }
-        .status-active { background-color: #dcfce7; color: #166534; }
-        .status-pending { background-color: #fef3c7; color: #92400e; }
-        .status-overdue { background-color: #fee2e2; color: #991b1b; }
+        /* Definisikan warna status tunggakan */
+        .status-active { background-color: #dcfce7; color: #166534; } /* Hijau */
+        .status-overdue { background-color: #fee2e2; color: #991b1b; } /* Merah */
+        
         .loader {
             border: 4px solid #f3f3f3;
             border-top: 4px solid #1e40af;
@@ -148,8 +149,8 @@
                         <div class="flex items-center">
                             <div class="p-3 bg-yellow-100 rounded-full"> <span class="text-2xl">⏰</span> </div>
                             <div class="ml-4">
-                                <p class="text-sm text-gray-600">Tunggakan (Coming Soon)</p>
-                                <p class="text-2xl font-bold text-yellow-600">0</p>
+                                <p class="text-sm text-gray-600">Anggota Menunggak</p>
+                                <p class="text-2xl font-bold text-yellow-600" id="stat-tunggakan">0</p> <!-- ID diubah -->
                             </div>
                         </div>
                     </div>
@@ -227,11 +228,12 @@
                                     <th class="p-3 text-left">Nama</th>
                                     <th class="p-3 text-left">Email</th>
                                     <th class="p-3 text-left">Total Simpanan</th>
+                                    <th class="p-3 text-left">Status Wajib</th> <!-- Kolom baru -->
                                     <th class="p-3 text-left">Aksi</th>
                                 </tr>
                             </thead>
                             <tbody id="membersTableBody">
-                                <tr><td colspan="5" class="p-4 text-center text-gray-500">Memuat data anggota...</td></tr>
+                                <tr><td colspan="6" class="p-4 text-center text-gray-500">Memuat data anggota...</td></tr> <!-- Colspan ditambah -->
                             </tbody>
                         </table>
                     </div>
@@ -349,8 +351,8 @@
                         <input type="text" id="member-password" class="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1" required>
                     </div>
                     <div>
-                        <label for="member-join-date" class="block text-sm font-medium text-gray-700">Tanggal Bergabung</label>
-                        <input type="text" id="member-join-date" class="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1" placeholder="Contoh: 28 Okt 2025">
+                        <label for="member-join-date" class="block text-sm font-medium text-gray-700">Tanggal Bergabung (Contoh: 22 Mei 2022)</label> <!-- Format diperjelas -->
+                        <input type="text" id="member-join-date" class="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1" placeholder="Contoh: 22 Mei 2022" required> <!-- Tambah required -->
                     </div>
                     <div class="grid grid-cols-3 gap-4">
                          <div>
@@ -404,6 +406,8 @@
             measurementId: "G-0H2HVTBB8E"
         };
         // -------------------------
+
+        const SIMPANAN_WAJIB_BULANAN = 25000; // Definisikan jumlah simpanan wajib
 
         let app, auth, db;
         let adminUser = null;
@@ -461,7 +465,6 @@
         function setupAuthListener() {
             onAuthStateChanged(auth, async (user) => {
                 if (user) {
-                    // Verifikasi apakah user ini adalah admin
                     const userDocRef = doc(db, "users", user.uid);
                     const userDoc = await getDoc(userDocRef);
                     
@@ -474,13 +477,11 @@
                         adminLoginScreen.classList.add('hidden');
                         mainLoader.classList.add('hidden');
                         
-                        // Muat data untuk tab-tab
                         loadDashboardData();
                         loadMembersTab();
                         loadSavingsTab();
-                        showTab('dashboard'); // Tampilkan dashboard saat login
+                        showTab('dashboard'); 
                     } else {
-                        // Jika login tapi bukan admin
                         console.warn("Akses ditolak. Pengguna bukan admin.");
                         await signOut(auth);
                         adminLoginError.textContent = "Anda tidak memiliki hak akses admin.";
@@ -489,7 +490,7 @@
                 } else {
                     adminUser = null;
                     showLoginScreen();
-                    cleanupListeners(); // Hentikan semua listener real-time
+                    cleanupListeners(); 
                 }
             });
         }
@@ -503,66 +504,77 @@
 
         // --- LOGIKA PENGISIAN DATA ---
         
-        function loadDashboardData() {
-            // 1. Ambil Statistik
+        async function loadDashboardData() { // Jadikan async untuk await getDocs
             const usersRef = collection(db, "users");
-            // Hitung anggota (tidak termasuk admin)
             const qUsers = query(usersRef, where("role", "==", "member"));
-            getCountFromServer(qUsers).then(snapshot => {
-                document.getElementById('stat-total-anggota').textContent = snapshot.data().count;
-            });
             
-            // 2. Ambil Total Simpanan (Ini agak berat, tapi OK untuk < 1000 anggota)
-            getDocs(qUsers).then(querySnapshot => {
-                let totalSimpanan = 0;
-                querySnapshot.forEach(doc => {
-                    const d = doc.data();
-                    totalSimpanan += (d.simpananPokok || 0) + (d.simpananWajib || 0) + (d.simpananSukarela || 0);
-                });
-                document.getElementById('stat-total-simpanan').textContent = formatCurrency(totalSimpanan);
-            });
+            // 1. Total Anggota
+            const membersSnapshot = await getCountFromServer(qUsers);
+            document.getElementById('stat-total-anggota').textContent = membersSnapshot.data().count;
+            
+            // 2 & 3. Total Simpanan & Tunggakan (Hitung bersamaan)
+            const allMembersDocs = await getDocs(qUsers);
+            let totalSimpanan = 0;
+            let countTunggakan = 0;
+            allMembersDocs.forEach(docSnap => {
+                const member = docSnap.data();
+                const totalMemberSimpanan = (member.simpananPokok || 0) + (member.simpananWajib || 0) + (member.simpananSukarela || 0);
+                totalSimpanan += totalMemberSimpanan;
 
-            // 3. Transaksi Bulan Ini
+                // Hitung tunggakan
+                const status = calculateArrearsStatus(member.bergabung, member.simpananWajib);
+                if (status === 'overdue') {
+                    countTunggakan++;
+                }
+            });
+            document.getElementById('stat-total-simpanan').textContent = formatCurrency(totalSimpanan);
+            document.getElementById('stat-tunggakan').textContent = countTunggakan; // Update kartu tunggakan
+
+            // 4. Transaksi Bulan Ini
             const today = new Date();
             const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
             const transRef = collection(db, "transactions");
             const qMonth = query(transRef, where("timestamp", ">=", Timestamp.fromDate(startOfMonth)));
-            getCountFromServer(qMonth).then(snapshot => {
-                 document.getElementById('stat-transaksi-bulan-ini').textContent = snapshot.data().count;
-            });
+            const monthSnapshot = await getCountFromServer(qMonth);
+            document.getElementById('stat-transaksi-bulan-ini').textContent = monthSnapshot.data().count;
 
-            // 4. Aktivitas Terbaru (reuse logic from savings tab)
+            // 5. Aktivitas Terbaru
             loadRecentTransactions(5, document.getElementById('dashboard-activity-list'));
         }
         
         function loadMembersTab() {
-            if (unsubscribeMembers) unsubscribeMembers(); // Hentikan listener lama
+            if (unsubscribeMembers) unsubscribeMembers(); 
             const usersRef = collection(db, "users");
-            // Tampilkan semua user kecuali admin
             const q = query(usersRef, where("role", "==", "member"));
             
             unsubscribeMembers = onSnapshot(q, (querySnapshot) => {
-                membersTableBody.innerHTML = ''; // Kosongkan tabel
-                allMembersData = []; // Kosongkan cache
+                membersTableBody.innerHTML = ''; 
+                allMembersData = []; 
                 
                 if (querySnapshot.empty) {
-                    membersTableBody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500">Belum ada data anggota.</td></tr>';
+                    membersTableBody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-gray-500">Belum ada data anggota.</td></tr>'; // colspan diubah jadi 6
                     return;
                 }
                 
-                querySnapshot.forEach(doc => {
-                    const member = doc.data();
-                    member.uid = doc.id; // Simpan UID
+                querySnapshot.forEach(docSnap => {
+                    const member = docSnap.data();
+                    member.uid = docSnap.id; 
                     allMembersData.push(member);
                     
                     const totalSimpanan = (member.simpananPokok || 0) + (member.simpananWajib || 0) + (member.simpananSukarela || 0);
                     
+                    // Hitung status tunggakan
+                    const statusWajib = calculateArrearsStatus(member.bergabung, member.simpananWajib);
+                    const statusClass = statusWajib === 'active' ? 'status-active' : 'status-overdue';
+                    const statusText = statusWajib === 'active' ? 'Lunas' : 'Menunggak';
+
                     const row = `
                         <tr class="border-b hover:bg-gray-50 member-row" data-search-term="${member.nama.toLowerCase()} ${member.email.toLowerCase()} ${member.noAnggota}">
                             <td class="p-3">${member.noAnggota}</td>
                             <td class="p-3 font-medium">${member.nama}</td>
                             <td class="p-3">${member.email}</td>
                             <td class="p-3 text-green-600 font-semibold">${formatCurrency(totalSimpanan)}</td>
+                            <td class="p-3"><span class="px-2 py-1 rounded-full text-xs ${statusClass}">${statusText}</span></td> <!-- Kolom Status Ditambahkan -->
                             <td class="p-3">
                                 <button onclick="window.editMember('${member.uid}')" class="text-blue-600 hover:text-blue-800 mr-2">Edit</button>
                             </td>
@@ -570,16 +582,49 @@
                     `;
                     membersTableBody.innerHTML += row;
                 });
+            }, error => {
+                console.error("Error fetching members:", error);
+                membersTableBody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-red-500">Gagal memuat data anggota.</td></tr>';
             });
         }
         
+        // Fungsi untuk menghitung status tunggakan
+        function calculateArrearsStatus(joinDateString, simpananWajibPaid) {
+            if (!joinDateString) return 'active'; // Jika tanggal bergabung tidak ada, anggap lunas
+
+            // Coba parse tanggal. Format asumsi "DD NamaBulan YYYY" (misal: "22 Mei 2022")
+            const parts = joinDateString.split(' ');
+            if (parts.length !== 3) return 'active'; // Format tidak valid
+            
+            const day = parseInt(parts[0], 10);
+            const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+            const monthIndex = monthNames.findIndex(m => m.toLowerCase() === parts[1].toLowerCase());
+            const year = parseInt(parts[2], 10);
+
+            if (isNaN(day) || monthIndex === -1 || isNaN(year)) return 'active'; // Gagal parse
+
+            const joinDate = new Date(year, monthIndex, day);
+            const today = new Date();
+            
+            // Hitung jumlah bulan sejak bergabung (tidak termasuk bulan bergabung jika di bulan yg sama)
+            let monthsPassed = (today.getFullYear() - joinDate.getFullYear()) * 12;
+            monthsPassed -= joinDate.getMonth();
+            monthsPassed += today.getMonth();
+
+            if (monthsPassed < 0) monthsPassed = 0; // Jika baru bergabung bulan ini/depan
+
+            const expectedWajib = monthsPassed * SIMPANAN_WAJIB_BULANAN;
+            const actualWajib = simpananWajibPaid || 0;
+
+            return actualWajib >= expectedWajib ? 'active' : 'overdue';
+        }
+        
         function loadSavingsTab() {
-            // Load transaksi terbaru di tab simpanan
             loadRecentTransactions(10, document.getElementById('savings-activity-list'));
         }
         
         async function loadRecentTransactions(count, listElement) {
-            if (unsubscribeTransactions) unsubscribeTransactions(); // Stop listener lama jika ada
+            if (unsubscribeTransactions) unsubscribeTransactions(); 
             const transRef = collection(db, "transactions");
             const q = query(transRef, orderBy("timestamp", "desc"), limit(count));
 
@@ -590,7 +635,6 @@
                     return;
                 }
                 
-                // Perlu ambil nama anggota, ini butuh fetch tambahan
                 for (const docSnap of querySnapshot.docs) {
                     const trans = docSnap.data();
                     let nama = "Anggota (dihapus)";
@@ -615,6 +659,9 @@
                     `;
                     listElement.innerHTML += itemHtml;
                 }
+            }, error => {
+                console.error("Error fetching transactions:", error);
+                 listElement.innerHTML = '<p class="text-sm text-red-500">Gagal memuat transaksi.</p>';
             });
         }
         
@@ -678,10 +725,10 @@
             
             document.getElementById('member-name').value = member.nama;
             document.getElementById('member-email').value = member.email;
-            document.getElementById('member-email').disabled = true; // Email (login) tidak boleh diubah
+            document.getElementById('member-email').disabled = true; 
             document.getElementById('member-password').value = member.noAnggota;
-            document.getElementById('member-password').disabled = true; // No. Anggota (password) tidak boleh diubah
-            document.getElementById('member-password').parentElement.classList.add('hidden'); // Sembunyikan password
+            document.getElementById('member-password').disabled = true; 
+            document.getElementById('member-password').parentElement.classList.add('hidden'); 
             document.getElementById('member-join-date').value = member.bergabung || "";
             document.getElementById('member-pokok').value = member.simpananPokok || 0;
             document.getElementById('member-wajib').value = member.simpananWajib || 0;
@@ -707,25 +754,28 @@
                 email: document.getElementById('member-email').value.toLowerCase(),
                 noAnggota: document.getElementById('member-password').value,
                 bergabung: document.getElementById('member-join-date').value,
-                simpananPokok: parseInt(document.getElementById('member-pokok').value, 10),
-                simpananWajib: parseInt(document.getElementById('member-wajib').value, 10),
-                simpananSukarela: parseInt(document.getElementById('member-sukarela').value, 10),
-                role: "member" // Default role
+                simpananPokok: parseInt(document.getElementById('member-pokok').value, 10) || 0, // Default 0 jika NaN
+                simpananWajib: parseInt(document.getElementById('member-wajib').value, 10) || 0, // Default 0 jika NaN
+                simpananSukarela: parseInt(document.getElementById('member-sukarela').value, 10) || 0, // Default 0 jika NaN
+                role: "member" 
             };
             
             try {
                 if (mode === 'add') {
-                    // 1. Buat akun Auth
+                    // Validasi tanggal bergabung
+                    if (!data.bergabung || !isValidDateString(data.bergabung)) {
+                        throw new Error("Format Tanggal Bergabung tidak valid. Gunakan 'DD NamaBulan YYYY'.");
+                    }
                     const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.noAnggota);
                     const newUid = userCredential.user.uid;
-                    
-                    // 2. Buat dokumen user di Firestore
                     await setDoc(doc(db, "users", newUid), data);
-                    
                     showNotification('Anggota baru berhasil ditambahkan!');
                 } else if (mode === 'edit') {
-                    // Hanya update data, tidak usah sentuh Auth
-                    const { email, noAnggota, ...updateData } = data; // email & noAnggota tidak diupdate
+                    // Validasi tanggal bergabung saat edit
+                    if (!data.bergabung || !isValidDateString(data.bergabung)) {
+                        throw new Error("Format Tanggal Bergabung tidak valid. Gunakan 'DD NamaBulan YYYY'.");
+                    }
+                    const { email, noAnggota, ...updateData } = data; 
                     await updateDoc(doc(db, "users", uid), updateData);
                     showNotification('Data anggota berhasil diperbarui!');
                 }
@@ -733,16 +783,29 @@
                 closeMemberModal();
             } catch (error) {
                 console.error("Error simpan anggota: ", error);
+                let errorMessage = 'Gagal menyimpan. Cek console.';
                 if (error.code === 'auth/email-already-in-use') {
-                    showErrorNotification('Email ini sudah terdaftar. Gagal menambah.');
-                } else {
-                    showErrorNotification('Gagal menyimpan. Cek console.');
+                    errorMessage = 'Email ini sudah terdaftar. Gagal menambah.';
+                } else if (error.message.includes('Tanggal Bergabung')) {
+                    errorMessage = error.message; // Tampilkan pesan error tanggal
                 }
+                showErrorNotification(errorMessage);
             } finally {
                 submitButton.disabled = false;
                 submitButton.textContent = "Simpan Anggota";
             }
         });
+        
+        // Fungsi validasi format tanggal "DD NamaBulan YYYY"
+        function isValidDateString(dateString) {
+             const parts = dateString.split(' ');
+            if (parts.length !== 3) return false;
+            const day = parseInt(parts[0], 10);
+            const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+            const monthIndex = monthNames.findIndex(m => m.toLowerCase() === parts[1].toLowerCase());
+            const year = parseInt(parts[2], 10);
+            return !isNaN(day) && monthIndex !== -1 && !isNaN(year) && year > 1900 && day > 0 && day <= 31;
+        }
 
         // --- LOGIKA TAB SIMPANAN (DARI admin.html) ---
         let searchTimeout;
@@ -762,7 +825,6 @@
                 const usersRef = collection(db, "users");
                 const searchTermUpper = searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1);
                 
-                // Cari berdasarkan nama
                 const qName = query(usersRef, 
                     where("role", "==", "member"),
                     where("nama", ">=", searchTermUpper),
@@ -774,7 +836,6 @@
                 searchResults.innerHTML = '';
                 
                 if (nameSnapshot.empty) {
-                    // Cari berdasarkan No Anggota
                     const qNo = query(usersRef, where("role", "==", "member"), where("noAnggota", "==", searchTerm), limit(1));
                     const noSnapshot = await getDocs(qNo);
                     if (noSnapshot.empty) {
@@ -821,13 +882,10 @@
             setLoading(true);
 
             try {
-                // Tentukan field yang akan di-increment
-                const fieldToUpdate = jenis; // "simpananWajib", "simpananSukarela", "simpananPokok"
+                const fieldToUpdate = jenis; 
                 
-                // 1. Update saldo di dokumen 'users'
                 await updateDoc(doc(db, "users", userId), { [fieldToUpdate]: increment(jumlah) });
                 
-                // 2. Buat catatan di 'transactions'
                 await addDoc(collection(db, "transactions"), {
                     userId: userId,
                     jenis: document.getElementById('jenis-setoran').options[document.getElementById('jenis-setoran').selectedIndex].text,
